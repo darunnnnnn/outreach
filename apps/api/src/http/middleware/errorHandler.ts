@@ -3,7 +3,13 @@ import { Prisma } from '@prisma/client';
 import type { ApiErrorBody } from '@outreach/shared';
 import { logger } from '../../config/logger';
 import { isProduction } from '../../config/env';
-import { AppError, ConflictError, NotFoundError, isAppError } from '../errors';
+import {
+  AppError,
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  isAppError,
+} from '../errors';
 
 /** Maps the Prisma failures that are genuinely the client's fault. */
 function translatePrismaError(err: unknown): AppError | null {
@@ -32,6 +38,26 @@ function translatePrismaError(err: unknown): AppError | null {
   return null;
 }
 
+/**
+ * body-parser rejects oversized or malformed payloads with its own error shape,
+ * carrying a `type` and an HTTP status. Without this they would surface as 500s
+ * and look like a server fault instead of a bad request.
+ */
+function translateBodyParserError(err: unknown): AppError | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const candidate = err as { type?: string; status?: number };
+  switch (candidate.type) {
+    case 'entity.too.large':
+      return new AppError(413, 'BAD_REQUEST', 'Request body is too large');
+    case 'entity.parse.failed':
+      return new BadRequestError('Request body is not valid JSON');
+    case 'encoding.unsupported':
+      return new BadRequestError('Unsupported content encoding');
+    default:
+      return null;
+  }
+}
+
 export const errorHandler: ErrorRequestHandler = (
   err: unknown,
   req: Request,
@@ -43,7 +69,9 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
-  const appError = isAppError(err) ? err : translatePrismaError(err);
+  const appError = isAppError(err)
+    ? err
+    : (translateBodyParserError(err) ?? translatePrismaError(err));
 
   if (appError) {
     const log = { requestId: req.requestId, code: appError.code, path: req.path };

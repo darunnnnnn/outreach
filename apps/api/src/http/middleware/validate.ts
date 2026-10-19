@@ -8,6 +8,22 @@ export interface ValidationSchemas {
   params?: ZodTypeAny;
 }
 
+/**
+ * Detected structurally rather than with `instanceof` alone. Schemas come from
+ * `@outreach/shared`, so under some module-resolution paths the error is built
+ * by a different `zod` module instance than the one imported here and the
+ * `instanceof` check silently fails — which turns a 422 into a 500.
+ */
+function isZodError(err: unknown): err is ZodError {
+  if (err instanceof ZodError) return true;
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { name?: unknown }).name === 'ZodError' &&
+    Array.isArray((err as { issues?: unknown }).issues)
+  );
+}
+
 /** `{ "email": "Must be a valid email address", "steps.0.delayHours": "..." }` */
 function fieldErrors(error: ZodError): Record<string, string> {
   const details: Record<string, string> = {};
@@ -36,7 +52,7 @@ export function validate(schemas: ValidationSchemas) {
       }
       next();
     } catch (err) {
-      if (err instanceof ZodError) {
+      if (isZodError(err)) {
         next(new ValidationError(fieldErrors(err)));
         return;
       }

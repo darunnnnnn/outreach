@@ -15,10 +15,12 @@ export const prisma =
     log: isDevelopment ? ['warn', 'error'] : ['error'],
     datasources: {
       db: {
+        // In test runs the integration database is used; unit suites never
+        // connect, but the client still has to be constructible, hence the
+        // unroutable placeholder rather than an empty string.
         url:
-          env.NODE_ENV === 'test'
-            ? (env.TEST_DATABASE_URL ?? env.DATABASE_URL ?? '')
-            : (env.DATABASE_URL ?? ''),
+          (env.NODE_ENV === 'test' ? env.TEST_DATABASE_URL : env.DATABASE_URL) ??
+          'postgresql://unset:unset@127.0.0.1:1/unset',
       },
     },
   });
