@@ -1,0 +1,38 @@
+{
+  "name": "outreachos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered multichannel outreach automation platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @outreach/api",
+    "dev:web": "npm run dev --workspace @outreach/web",
+    "dev:worker": "npm run dev:worker --workspace @outreach/api",
+    "build": "npm run build --workspace @outreach/shared && npm run build --workspace @outreach/api && npm run build --workspace @outreach/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "npm run test --workspaces --if-present",
+    "test:unit": "npm run test:unit --workspace @outreach/api",
+    "test:integration": "npm run test:integration --workspace @outreach/api",
+    "db:migrate": "npm run db:migrate --workspace @outreach/api",
+    "db:migrate:deploy": "npm run db:migrate:deploy --workspace @outreach/api",
+    "db:generate": "npm run db:generate --workspace @outreach/api",
+    "db:seed": "npm run db:seed --workspace @outreach/api",
+    "db:reset": "npm run db:reset --workspace @outreach/api",
+    "db:studio": "npm run db:studio --workspace @outreach/api"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.1",
+    "typescript": "^5.6.3"
+  }
+}

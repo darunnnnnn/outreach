@@ -1,0 +1,151 @@
+// OutreachOS — Phase 1 schema: identity, organisations, sessions, invitations, audit.
+// Phases 2-9 extend this file in the order set out in docs/04-database-schema.md §8.
+// Rule for every later table: an `organizationId` column with an index, and a
+// repository function that takes it as a required argument.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  /// Always stored lower-cased; the API normalises before writing.
+  email           String    @unique
+  passwordHash    String
+  name            String
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships Membership[]
+  sessions    Session[]
+  invitesSent Invitation[] @relation("invitedBy")
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Organization {
+  id       String @id @default(cuid())
+  name     String
+  slug     String @unique
+  timezone String @default("UTC")
+  /// free | starter | growth — enforced from Phase 9 (billing).
+  plan     String @default("free")
+  /// 0 means "no ceiling configured"; checked before every AI call from Phase 3.
+  aiMonthlyBudgetMicroUsd BigInt @default(0)
+  settings Json   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+
+  @@map("organizations")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role     @default(MEMBER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+  @@map("memberships")
+}
+
+/// One row per refresh token. Rotation creates a new row in the same `familyId`;
+/// presenting an already-rotated token revokes the whole family.
+model Session {
+  id           String    @id @default(cuid())
+  userId       String
+  familyId     String
+  /// sha256 of the refresh token. The token itself is never stored.
+  tokenHash    String    @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @unique
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role             @default(MEMBER)
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("invitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  /// At most one invitation per (org, email, status) — so one live PENDING invite,
+  /// while history of ACCEPTED/REVOKED rows is retained.
+  @@unique([organizationId, email, status])
+  @@index([organizationId, status])
+  @@map("invitations")
+}
+
+model AuditLog {
+  /// `organizationId` is null for events that precede org context, e.g. a failed login.
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorUserId    String?
+  action         String
+  targetType     String?
+  targetId       String?
+  metadata       Json     @default("{}")
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([action, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
+}
